@@ -42,6 +42,10 @@ app.get('/', (req, res) => {
                 .btn-outline:hover { background: rgba(56, 189, 248, 0.1); }
                 .btn-green { background: #22c55e; color: #000; }
                 .btn-green:hover { background: #16a34a; }
+                
+                /* زر التقسيم الذكي */
+                .btn-magic { background: transparent; color: #f59e0b; border: 1px solid #f59e0b; margin-top: 5px; }
+                .btn-magic:hover { background: rgba(245, 158, 11, 0.1); }
 
                 .log { background: var(--bg-input); padding: 15px; margin-top: 25px; height: 160px; overflow-y: auto; border-radius: 10px; font-family: monospace; font-size: 12px; color: #22c55e; border: 1px solid var(--border-light); line-height: 1.6;}
             </style>
@@ -90,6 +94,14 @@ app.get('/', (req, res) => {
                 </div>
 
                 <button onclick="sendCommand()" id="btn-send">حفظ الإعدادات الجديدة + تشغيل 🚀</button>
+
+                <!-- 🔴 قسم التقسيم الذكي 50/50 -->
+                <div class="form-group" style="margin-top: 25px; border-top: 1px solid var(--border-light); padding-top: 20px;">
+                    <label style="color: #f59e0b; font-weight: 700; font-size: 14px;">🌓 نظام التقسيم السريع (نصف كازا / نصف رباط)</label>
+                    <button class="btn-magic" onclick="magicSplit()">
+                        تقسيم نوافذ هذا الحاسوب 50/50 🌓
+                    </button>
+                </div>
 
                 <div class="form-group" style="margin-top: 25px; border-top: 1px solid var(--border-light); padding-top: 20px;">
                     <label style="color: #38bdf8; font-weight: 700; font-size: 14px;">📦 نظام التوزيع الصارم (إيميل واحد لكل نافذة)</label>
@@ -276,6 +288,32 @@ app.get('/', (req, res) => {
                         log.scrollTop = log.scrollHeight;
                     }).catch(err => { alert('❌ خطأ في الاتصال بالسيرفر'); });
                 }
+
+                // 🔴 وظيفة التقسيم الذكي للبرتغال
+                function magicSplit() {
+                    const pc = document.getElementById('targetPc').value;
+                    if(!confirm("هل أنت متأكد من تقسيم المتصفحات مناصفة بالترتيب بين كازا والرباط؟")) return;
+                    
+                    const payload = {
+                        country: "PT", 
+                        targetPc: pc,
+                        visaType: document.getElementById('visaType').value,
+                        subType: document.getElementById('subType').value, 
+                        category: document.getElementById('category').value
+                    };
+                    
+                    fetch('/api/magic-split', { 
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) 
+                    }).then(res => res.json()).then(data => {
+                        const log = document.getElementById('log');
+                        if(data.success) {
+                            log.innerHTML += "🌓 [تقسيم ذكي]: تم توجيه النصف لكازا والنصف للرباط (" + data.clients + " نافذة)!<br>";
+                        } else {
+                            log.innerHTML += "❌ [خطأ]: " + data.error + "<br>";
+                        }
+                        log.scrollTop = log.scrollHeight;
+                    }).catch(err => { alert('❌ خطأ في الاتصال'); });
+                }
             </script>
         </body>
         </html>
@@ -307,6 +345,32 @@ app.post('/api/broadcast', (req, res) => {
             client.send(JSON.stringify(payload)); 
             count++;
         }
+    });
+    res.json({ success: true, clients: count });
+});
+
+// 🔴 API التقسيم الذكي في السيرفر
+app.post('/api/magic-split', (req, res) => {
+    const { targetPc, country, visaType, subType, category } = req.body;
+    const target = targetPc ? targetPc.toLowerCase() : "all";
+    let eligibleClients = [];
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN && client.pcId && client.pcId !== "unknown") {
+            if (target === "all" || client.pcId === target) { eligibleClients.push(client); }
+        }
+    });
+    const numClients = eligibleClients.length;
+    if (numClients === 0) return res.json({ success: false, error: "لا يوجد متصفحات متصلة." });
+    let count = 0;
+    const half = Math.ceil(numClients / 2);
+    eligibleClients.forEach((client, index) => {
+        // توزيع كازا والرباط مناصفة
+        let assignedCity = (index < half) ? "Casablanca" : "Rabat"; 
+        client.send(JSON.stringify({
+            action: "CHANGE_PROFILE", 
+            country: country, city: assignedCity, visaType, subType, category
+        }));
+        count++;
     });
     res.json({ success: true, clients: count });
 });
